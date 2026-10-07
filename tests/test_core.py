@@ -26,7 +26,6 @@ def test_einzelner_kurs_liefert_null_volatilitaet_und_drawdown():
 
 
 def test_gesamtrendite_und_volatilitaet_sind_handrechenbar():
-    # Tagesrenditen 10 % und -9,0909... %, Mittelwert 0,4545... %.
     result = berechne_kennzahlen([100, 110, 100])
     r1, r2 = 0.1, 100 / 110 - 1
     avg = (r1 + r2) / 2
@@ -46,3 +45,32 @@ def test_fehlender_csv_wert_wird_abgelehnt(tmp_path):
 def test_leere_kursliste_wird_abgelehnt():
     with pytest.raises(ValueError, match="Mindestens ein"):
         berechne_kennzahlen([])
+
+
+def test_csv_fehlerzeile_beruecksichtigt_leere_physische_zeilen(tmp_path):
+    p = tmp_path / "luecke.csv"
+    p.write_text("Datum,Schluss\n2024-01-01,100\n\n2024-01-02,\n", encoding="utf-8")
+    with pytest.raises(ValueError, match=r"CSV-Zeile 4"):
+        lese_schlusskurse(p)
+
+
+def test_extremes_aufwaertsverhaeltnis_mit_ueberlauf_wird_abgelehnt():
+    with pytest.raises(ValueError, match="nicht-endliche|Überlauf"):
+        berechne_kennzahlen([1e-308, 1e308])
+
+
+@pytest.mark.parametrize("kurse", [[1e308, 1e-308], [1e308, 1e308, 1e-308]])
+def test_extreme_abwaertsbewegungen_liefern_nur_endliche_kennzahlen(kurse):
+    result = berechne_kennzahlen(kurse)
+    assert all(math.isfinite(x) for x in (
+        result.gesamtrendite,
+        result.annualisierte_volatilitaet,
+        result.maximaler_drawdown,
+    ))
+
+
+def test_finite_extremer_kurs_ohne_ueberlauf_bleibt_gueltig():
+    result = berechne_kennzahlen([1e308, 1e308])
+    assert result.gesamtrendite == 0
+    assert result.annualisierte_volatilitaet == 0
+    assert result.maximaler_drawdown == 0
